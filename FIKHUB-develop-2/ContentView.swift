@@ -177,7 +177,7 @@ class GetLatestUserProfileUseCaseImpl: GetLatestUserProfileUseCase {
 
 class ChatController: ObservableObject {
     @Published var messages: [ChatMessage] = []
-    let openAI = OpenAI(apiToken: "secret api")
+    let openAI = OpenAI(apiToken: "api secret")
     let initialPrompt: String
     let meetingTitle: String
     let profileViewModel: ProfileViewModel
@@ -206,7 +206,7 @@ class ChatController: ObservableObject {
         let combinedMessages = [ChatMessage(content: initialPrompt, isUser: false)] + self.messages
         let query = ChatQuery(
             messages: combinedMessages.map({ .init(role: $0.isUser ? .user : .system, content: $0.content)! }),
-            model: .gpt4_0613
+            model: .gpt4_o_mini
         )
         
         openAI.chats(query: query) { result in
@@ -268,12 +268,15 @@ struct Meeting: Identifiable, Codable {
     let initialMessage: String
 }
 
-struct ChatMessage: Identifiable, Codable {
+struct ChatMessage: Identifiable, Codable, Equatable {
     var id: UUID = .init()
     let content: String
     let isUser: Bool
+    
+    static func == (lhs: ChatMessage, rhs: ChatMessage) -> Bool {
+        return lhs.id == rhs.id && lhs.content == rhs.content && lhs.isUser == rhs.isUser
+    }
 }
-
 struct ChatHistory: Codable, Identifiable {
     let id: UUID
     let meetingTitle: String
@@ -722,12 +725,23 @@ struct MessageView: View {
     
     var body: some View {
         VStack(spacing: 0) {
-            ScrollView {
-                LazyVStack(spacing: 12) {
-                    ForEach(chatController.messages) { message in
-                        ChatBubble(message: message)
-                            .padding()
+            ScrollViewReader { proxy in
+                ScrollView {
+                    LazyVStack(spacing: 12) {
+                        ForEach(chatController.messages) { message in
+                            ChatBubble(message: message)
+                                .padding()
+                                .id(message.id) // Berikan ID untuk setiap pesan
+                        }
                     }
+                }
+                .onChange(of: chatController.messages) { _ in
+                    // Scroll ke pesan terakhir setiap kali ada pesan baru
+                    scrollToBottom(proxy: proxy)
+                }
+                .onAppear {
+                    // Scroll ke pesan terakhir ketika view muncul
+                    scrollToBottom(proxy: proxy)
                 }
             }
             
@@ -758,6 +772,12 @@ struct MessageView: View {
         guard !newMessage.isEmpty else { return }
         chatController.sendNewMessage(content: newMessage)
         newMessage = ""
+    }
+    
+    private func scrollToBottom(proxy: ScrollViewProxy) {
+        if let lastMessageId = chatController.messages.last?.id {
+            proxy.scrollTo(lastMessageId, anchor: .bottom)
+        }
     }
 }
 
