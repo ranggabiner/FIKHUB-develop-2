@@ -625,11 +625,6 @@ struct MainTabView: View {
     
     var body: some View {
         TabView {
-            HomeView()
-                .tabItem {
-                    Label("Home", systemImage: "house")
-                }
-            
             ScheduleView(viewModel: profileViewModel)
                 .tabItem {
                     Label("Schedule", systemImage: "calendar")
@@ -699,12 +694,24 @@ struct MeetingsView: View {
     @ObservedObject var viewModel: ProfileViewModel
     let subject: String
     @Environment(\.dismiss) private var dismiss
+    @State private var searchText = ""
 
-    
+    var filteredMeetings: [Meeting] {
+        let subjectMeetings = viewModel.meetings.filter { $0.subject == subject }
+        if searchText.isEmpty {
+            return subjectMeetings
+        } else {
+            return subjectMeetings.filter { meeting in
+                meeting.title.localizedCaseInsensitiveContains(searchText) ||
+                meeting.description.localizedCaseInsensitiveContains(searchText)
+            }
+        }
+    }
+
     var body: some View {
         NavigationStack {
             List {
-                ForEach(viewModel.meetings.filter { $0.subject == subject }) { meeting in
+                ForEach(filteredMeetings) { meeting in
                     NavigationLink(destination: MessageView(
                         chatController: ChatController(
                             initialPrompt: meeting.initialPrompt,
@@ -725,19 +732,8 @@ struct MeetingsView: View {
                 }
             }
             .listStyle(.plain)
-            .navigationBarBackButtonHidden(true)
             .navigationBarTitle(subject, displayMode: .inline)
-            .toolbar {
-                ToolbarItem(placement: .topBarLeading) {
-                        Button(action: {
-                            dismiss()
-                        }, label: {
-                            Image(systemName: "chevron.backward")
-                                .font(.subheadline)
-                        })
-                }
-          
-            }            
+            .searchable(text: $searchText, prompt: "Cari Pertemuan")
             .onAppear {
                 viewModel.loadMeetings(for: subject)
             }
@@ -758,16 +754,14 @@ struct MessageView: View {
                         ForEach(chatController.messages) { message in
                             ChatBubble(message: message)
                                 .padding()
-                                .id(message.id) // Berikan ID untuk setiap pesan
+                                .id(message.id)
                         }
                     }
                 }
                 .onChange(of: chatController.messages) { _ in
-                    // Scroll ke pesan terakhir setiap kali ada pesan baru
                     scrollToBottom(proxy: proxy)
                 }
                 .onAppear {
-                    // Scroll ke pesan terakhir ketika view muncul
                     scrollToBottom(proxy: proxy)
                 }
             }
@@ -873,7 +867,7 @@ struct ProfileFormView: View {
                     )
                     .disabled(viewModel.isSaving)
                     .disabled(!isFormValid)
-                    .padding(.horizontal)
+                    .padding()
                 }
             }
             .navigationBarTitle("Profile", displayMode: .large)
@@ -926,20 +920,32 @@ struct SemesterView: View {
     ]
     @Binding var selectedSemester: String
     @Environment(\.presentationMode) var presentationMode
+    @State private var searchText = ""
+
+    
+    var filteredSemesters: [(key: Int, value: String)] {
+        if searchText.isEmpty {
+            return Array(semesters.sorted(by: { $0.key < $1.key }))
+        } else {
+            return semesters.filter { $0.value.lowercased().contains(searchText.lowercased()) }
+                .sorted(by: { $0.key < $1.key })
+        }
+    }
 
 
     var body: some View {
         Form {
-            ForEach(Array(semesters.sorted(by: { $0.key < $1.key })), id: \.key) { key, value in
+            ForEach(filteredSemesters, id: \.key) { key, value in
                 Button(action: {
                     selectedSemester = value
                     presentationMode.wrappedValue.dismiss()
                 }) {
                     Text(value)
-                        .foregroundColor(.black)
+                        .foregroundColor(.primary)
                 }
             }
         }
+        .searchable(text: $searchText, prompt: "Cari semester")
         .navigationBarTitle("Pilih Semester", displayMode: .inline)
     }
 }
@@ -952,21 +958,34 @@ struct ProgramsView: View {
     ]
     @Binding var selectedProgram: String
     @Environment(\.presentationMode) var presentationMode
+    @State private var searchText = ""
+
 
     var body: some View {
         Form {
-            ForEach(Array(programs.sorted(by: { $0.key < $1.key })), id: \.key) { key, value in
+            ForEach(searchResults, id: \.key) { key, value in
                 Button(action: {
                     selectedProgram = value
                     presentationMode.wrappedValue.dismiss()
                 }) {
                     Text(value)
-                        .foregroundColor(.black)
+                        .foregroundColor(.primary)
                 }
             }
         }
         .navigationBarTitle("Pilih Program Studi", displayMode: .inline)
+        .searchable(text: $searchText, prompt: "Cari program studi")
+
     }
+    var searchResults: [(key: Int, value: String)] {
+        if searchText.isEmpty {
+            return programs.sorted { $0.key < $1.key }
+        } else {
+            return programs.filter { $0.value.lowercased().contains(searchText.lowercased()) }
+                .sorted { $0.key < $1.key }
+        }
+    }
+
 }
 
 struct InitScheduleView: View {
@@ -1317,18 +1336,15 @@ struct ScheduleView: View {
             VStack {
                 if selectedSegment == 0 {
                     AllSchedulesView(viewModel: viewModel)
-                } else if selectedSegment == 1 {
-                    TodayScheduleView(viewModel: viewModel)
                 } else {
-                    TomorrowScheduleView(viewModel: viewModel)
+                    ShortScheduleView(viewModel: viewModel)
                 }
             }
             .navigationTitle("Jadwal")
             .toolbar {
                 ToolbarItem(placement: .principal) {
                     Picker("", selection: $selectedSegment) {
-                        Text("Hari Ini").tag(1)
-                        Text("Besok").tag(2)
+                        Text("Singkat").tag(1)
                         Text("Semua").tag(0)
                     }
                     .pickerStyle(SegmentedPickerStyle())
@@ -1409,36 +1425,55 @@ struct AllSchedulesView: View {
     }
 }
 
-struct TodayScheduleView: View {
+struct ShortScheduleView: View {
     @ObservedObject var viewModel: ProfileViewModel
     @State private var editingSchedule: ScheduleItem?
-
     
     var body: some View {
         VStack(alignment: .leading) {
-            if viewModel.todaySchedules.isEmpty {
-                VStack {
-                    Spacer()
-                    Text("Tidak ada jadwal hari ini")
-                        .foregroundColor(.gray)
-                        .padding()
-                    Spacer()
-                }
-            } else {
-                List {
-                    Section(header: Text(viewModel.dayName(for: Calendar.current.date(byAdding: .day, value: 0, to: Date())!).uppercased()).textCase(.uppercase).foregroundStyle(.orange)) {
+            List {
+                Section(header: Text(formatSectionHeader(for: Date())).foregroundStyle(.orange)) {
+                    if viewModel.todaySchedules.isEmpty {
+                        Text("Tidak ada jadwal")
+                            .font(.subheadline)
+                    } else {
                         ForEach(viewModel.todaySchedules) { schedule in
                             ScheduleItemView(schedule: schedule,
-                                    onDelete: { viewModel.deleteSchedule(schedule) },
-                                    onEdit: { editingSchedule = schedule })
-                            }
+                                             onDelete: { viewModel.deleteSchedule(schedule) },
+                                             onEdit: { editingSchedule = schedule })
                         }
+                    }
                 }
-                .listStyle(.plain)
+                Section(header: Text(formatSectionHeader(for: Calendar.current.date(byAdding: .day, value: 1, to: Date())!)).foregroundStyle(.orange)) {
+                    if viewModel.tomorrowSchedules.isEmpty {
+                        Text("Tidak ada jadwal")
+                            .font(.subheadline)
+                    } else {
+                        ForEach(viewModel.tomorrowSchedules) { schedule in
+                            ScheduleItemView(schedule: schedule,
+                                             onDelete: { viewModel.deleteSchedule(schedule) },
+                                             onEdit: { editingSchedule = schedule })
+                        }
+                    }
+                }
             }
+            .listStyle(.plain)
         }
         .sheet(item: $editingSchedule) { schedule in
             EditScheduleView(viewModel: viewModel, schedule: schedule)
+        }
+    }
+    
+    private func formatSectionHeader(for date: Date) -> String {
+        let dayName = viewModel.dayName(for: date)
+        let dateFormatter = DateFormatter()
+        dateFormatter.dateFormat = "d MMMM"
+        let dateString = dateFormatter.string(from: date)
+        
+        if Calendar.current.isDateInToday(date) {
+            return "HARI INI — \(dayName), \(dateString)"
+        } else {
+            return "BESOK — \(dayName), \(dateString)"
         }
     }
 }
