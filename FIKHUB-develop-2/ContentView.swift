@@ -177,10 +177,11 @@ class GetLatestUserProfileUseCaseImpl: GetLatestUserProfileUseCase {
 
 class ChatController: ObservableObject {
     @Published var messages: [ChatMessage] = []
-    let openAI = OpenAI(apiToken: "api secret")
+    let openAI = OpenAI(apiToken: "secret api")
     let initialPrompt: String
     let meetingTitle: String
     let profileViewModel: ProfileViewModel
+    @Published var isLoading: Bool = false
     
     init(initialPrompt: String, initialMessage: String, meetingTitle: String, profileViewModel: ProfileViewModel) {
         self.initialPrompt = initialPrompt
@@ -199,7 +200,12 @@ class ChatController: ObservableObject {
         let userMessage = ChatMessage(content: content, isUser: true)
         self.messages.append(userMessage)
         saveChatHistory()
+        
+        let loadingMessage = ChatMessage(content: "Loading...", isUser: false)
+        self.messages.append(loadingMessage)
+        isLoading = true
         getBotReply()
+        UIImpactFeedbackGenerator(style: .medium).impactOccurred()
     }
     
     func getBotReply() {
@@ -214,11 +220,18 @@ class ChatController: ObservableObject {
             case .success(let success):
                 guard let choice = success.choices.first, let message = choice.message.content?.string else { return }
                 DispatchQueue.main.async {
+                    self.messages.removeLast()
                     self.messages.append(ChatMessage(content: message, isUser: false))
                     self.saveChatHistory()
+                    self.isLoading = false
+                    UIImpactFeedbackGenerator(style: .medium).impactOccurred()
                 }
             case .failure(let failure):
                 print(failure)
+                DispatchQueue.main.async {
+                    self.messages.removeLast()
+                    self.isLoading = false
+                }
             }
         }
     }
@@ -841,8 +854,11 @@ struct ProfileFormView: View {
                     Spacer()
                     ButtonFill(title: "Lanjutkan", action: {
                         viewModel.saveProfileAndNavigate()
-                    })
+                    },
+                               backgroundColor: isFormValid ? .orange : .gray
+                    )
                     .disabled(viewModel.isSaving)
+                    .disabled(!isFormValid)
                     .padding(.horizontal)
                 }
             }
@@ -873,6 +889,14 @@ struct ProfileFormView: View {
             }
         }
     }
+    
+    private var isFormValid: Bool {
+        !viewModel.name.isEmpty &&
+        !viewModel.selectedProgram.contains("Pilih Program Studi") &&
+        !viewModel.selectedSemester.contains("Pilih Semester") &&
+        !viewModel.isSaving
+    }
+
 }
 
 struct SemesterView: View {
@@ -997,11 +1021,12 @@ struct InitScheduleView: View {
                         Spacer()
                         Button(action: {
                             viewModel.ScheduleNavigate()
-                        }, label: {
+                        }) {
                             Text("Selesai")
                                 .font(.subheadline)
                                 .fontWeight(.semibold)
-                        })
+                        }
+                        .disabled(!isScheduleAdded)
                     }
                 }
             }
@@ -1019,6 +1044,9 @@ struct InitScheduleView: View {
                     .navigationBarBackButtonHidden(true)
             }
         }
+    }
+    private var isScheduleAdded: Bool {
+        !viewModel.schedules.isEmpty
     }
 }
 
@@ -1089,10 +1117,6 @@ struct AddScheduleView: View {
                               Text(selectedSubject.isEmpty ? "Pilih Mata Kuliah" : selectedSubject)
                                   .foregroundStyle(.orange)
                           }
-                    NavigationLink(destination: RoomLocationView(selectedLocation: $selectedLocation)) {
-                        Text(selectedLocation.isEmpty ? "Pilih Lokasi" : selectedLocation)
-                            .foregroundStyle(.orange)
-                    }
                 }
                 Section {
                     Picker("Hari", selection: $selectedDay) {
@@ -1105,11 +1129,18 @@ struct AddScheduleView: View {
                     DatePicker("Jam Mulai", selection: $startTime, displayedComponents: .hourAndMinute)
                     DatePicker("Jam Selesai", selection: $endTime, displayedComponents: .hourAndMinute)
                 }
+                Section {
+                    NavigationLink(destination: RoomLocationView(selectedLocation: $selectedLocation)) {
+                        Text(selectedLocation.isEmpty ? "Pilih Ruang" : selectedLocation)
+                            .foregroundStyle(.orange)
+                    }
+                }
             }
             .navigationBarTitle("Tambah", displayMode: .inline)
             .navigationBarItems(trailing: Button("Simpan") {
                 saveSchedule()
-            })
+            }
+                .disabled(!isFormValid))
             .navigationBarItems(leading: Button("Batal") {
                 dismiss()
             })
@@ -1127,6 +1158,11 @@ struct AddScheduleView: View {
         )
         viewModel.saveSchedule(newSchedule)
         dismiss()
+    }
+    
+    private var isFormValid: Bool {
+        !selectedSubject.isEmpty &&
+        !selectedLocation.isEmpty
     }
 
 }
@@ -1250,7 +1286,7 @@ struct RoomLocationView: View {
                     }
                 }
             }
-            .navigationBarTitle("Jadwal", displayMode: .large)
+            .navigationBarTitle("Ruang", displayMode: .large)
             .searchable(text: $searchText, prompt: "Cari")
         }
     }
