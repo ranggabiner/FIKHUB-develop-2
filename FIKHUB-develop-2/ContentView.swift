@@ -684,7 +684,7 @@ struct MataKuliahView: View {
                     }
                 }
             }
-            .listStyle(.plain)
+            
             .navigationTitle("Mata Kuliah")
             .searchable(text: $searchText, prompt: "Cari Mata Kuliah")
             .onAppear {
@@ -698,6 +698,8 @@ struct MataKuliahView: View {
 struct MeetingsView: View {
     @ObservedObject var viewModel: ProfileViewModel
     let subject: String
+    @Environment(\.dismiss) private var dismiss
+
     
     var body: some View {
         NavigationStack {
@@ -723,7 +725,19 @@ struct MeetingsView: View {
                 }
             }
             .listStyle(.plain)
-            .navigationBarTitle(subject, displayMode: .large)
+            .navigationBarBackButtonHidden(true)
+            .navigationBarTitle(subject, displayMode: .inline)
+            .toolbar {
+                ToolbarItem(placement: .topBarLeading) {
+                        Button(action: {
+                            dismiss()
+                        }, label: {
+                            Image(systemName: "chevron.backward")
+                                .font(.subheadline)
+                        })
+                }
+          
+            }            
             .onAppear {
                 viewModel.loadMeetings(for: subject)
             }
