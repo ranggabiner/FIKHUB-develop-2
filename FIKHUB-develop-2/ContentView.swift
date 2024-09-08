@@ -627,12 +627,12 @@ struct MainTabView: View {
         TabView {
             ScheduleView(viewModel: profileViewModel)
                 .tabItem {
-                    Label("Schedule", systemImage: "calendar")
+                    Label("Jadwal", systemImage: "calendar")
                 }
             
             MataKuliahView(profileViewModel: profileViewModel)
                 .tabItem {
-                    Label("Mata Kuliah", systemImage: "book")
+                    Label("Mata Kuliah", systemImage: "book.pages")
                 }
         }
         .onAppear {
@@ -744,15 +744,17 @@ struct MeetingsView: View {
 struct MessageView: View {
     @ObservedObject var chatController: ChatController
     @State private var newMessage = ""
+    @State private var searchText = ""
+    @State private var isSearching = false
     let meeting: Meeting
-    
+
     var body: some View {
         VStack(spacing: 0) {
             ScrollViewReader { proxy in
                 ScrollView {
                     LazyVStack(spacing: 12) {
                         ForEach(chatController.messages) { message in
-                            ChatBubble(message: message)
+                            ChatBubble(message: message, isHighlighted: isMessageHighlighted(message))
                                 .padding()
                                 .id(message.id)
                         }
@@ -761,16 +763,23 @@ struct MessageView: View {
                 .onChange(of: chatController.messages) { _ in
                     scrollToBottom(proxy: proxy)
                 }
+                .onChange(of: searchText) { _ in
+                    if let firstMatch = chatController.messages.first(where: { isMessageHighlighted($0) }) {
+                        withAnimation {
+                            proxy.scrollTo(firstMatch.id, anchor: .center)
+                        }
+                    }
+                }
                 .onAppear {
                     scrollToBottom(proxy: proxy)
                 }
             }
-            
+
             HStack {
                 TextField("Ketik pesan", text: $newMessage)
                     .textFieldStyle(RoundedBorderTextFieldStyle())
                     .padding(.horizontal)
-                
+
                 Button(action: sendMessage) {
                     Image(systemName: "paperplane.fill")
                         .foregroundColor(.orange)
@@ -782,19 +791,32 @@ struct MessageView: View {
         }
         .navigationTitle(meeting.title)
         .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            ToolbarItem(placement: .navigationBarTrailing) {
+                Button(action: {
+                    isSearching.toggle()
+                }) {
+                    Image(systemName: "magnifyingglass")
+                }
+            }
+        }
+        .searchable(text: $searchText, isPresented: $isSearching, prompt: "Cari pesan...")
         .onAppear {
             if chatController.messages.isEmpty {
                 chatController.sendNewMessage(content: "Hai! Apa yang ingin kamu tanyakan tentang \(meeting.title)?")
             }
         }
     }
-    
+    private func isMessageHighlighted(_ message: ChatMessage) -> Bool {
+        !searchText.isEmpty && message.content.lowercased().contains(searchText.lowercased())
+    }
+
     private func sendMessage() {
         guard !newMessage.isEmpty else { return }
         chatController.sendNewMessage(content: newMessage)
         newMessage = ""
     }
-    
+
     private func scrollToBottom(proxy: ScrollViewProxy) {
         if let lastMessageId = chatController.messages.last?.id {
             proxy.scrollTo(lastMessageId, anchor: .bottom)
@@ -804,16 +826,21 @@ struct MessageView: View {
 
 struct ChatBubble: View {
     let message: ChatMessage
-    
+    let isHighlighted: Bool
+
     var body: some View {
         HStack {
-            if message.isUser { Spacer() }
+            if message.isUser {
+                Spacer()
+            }
             Text(message.content)
                 .padding(10)
-                .background(message.isUser ? Color.orange : Color(.systemGray5))
+                .background(isHighlighted ? Color.yellow.opacity(0.3) : (message.isUser ? Color.orange : Color(.systemGray5)))
                 .foregroundColor(message.isUser ? .white : .black)
                 .cornerRadius(10)
-            if !message.isUser { Spacer() }
+            if !message.isUser {
+                Spacer()
+            }
         }
     }
 }
